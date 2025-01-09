@@ -1,13 +1,8 @@
--- last update 08.01.2025
--- повышена производительность и добавлены новые функции
 if CLIENT then
     local scoreboard = {}
     local selectedPlayer = nil
     local infoPanel = nil
     local isInfoPanelOpen = false
-    local hoveredPlayer = nil
-
-    scoreboard.scrollOffset = 0
 
     local draw = draw
     local Color = Color
@@ -20,19 +15,17 @@ if CLIENT then
     local surface = surface
     local hook = hook
     local player_GetAll = player.GetAll
-    local gui_MousePos = gui.MousePos
-    local input_IsMouseDown = input.IsMouseDown
-    local input_WasMousePressed = input.WasMousePressed
     local notification_AddLegacy = notification.AddLegacy
     local SetClipboardText = SetClipboardText
     local TEXT_ALIGN_LEFT = TEXT_ALIGN_LEFT
     local TEXT_ALIGN_CENTER = TEXT_ALIGN_CENTER
     local TEXT_ALIGN_RIGHT = TEXT_ALIGN_RIGHT
+    local input = input
 
     local L = {
         title = "⋘ BlackoutPVP ⋙",
         header_name = "Имя",
-        header_privilege = "Привелегия",
+        header_privilege = "Привилегия",
         header_kills = "Убийства",
         header_deaths = "Смерти",
         header_ping = "Пинг",
@@ -47,7 +40,8 @@ if CLIENT then
         ["STEAM_0:0:562063878"] = { role = L.developer, color = Color(30, 144, 255) },
     }
 
-    surface.CreateFont("Scoreboard_Title", {
+    local CreateFont = surface.CreateFont
+    CreateFont("Scoreboard_Title", {
         font = "Montserrat SemiBold",
         size = 28,
         weight = 600,
@@ -55,7 +49,7 @@ if CLIENT then
         extended = true,
     })
 
-    surface.CreateFont("Scoreboard_Header", {
+    CreateFont("Scoreboard_Header", {
         font = "Montserrat SemiBold",
         size = 20,
         weight = 600,
@@ -63,7 +57,7 @@ if CLIENT then
         extended = true,
     })
 
-    surface.CreateFont("Scoreboard_PlayerName", {
+    CreateFont("Scoreboard_PlayerName", {
         font = "Montserrat Medium",
         size = 20,
         weight = 500,
@@ -71,7 +65,7 @@ if CLIENT then
         extended = true,
     })
 
-    surface.CreateFont("Scoreboard_PlayerInfo", {
+    CreateFont("Scoreboard_PlayerInfo", {
         font = "Montserrat Regular",
         size = 16,
         weight = 400,
@@ -79,7 +73,7 @@ if CLIENT then
         extended = true,
     })
 
-    surface.CreateFont("Scoreboard_ButtonFont", {
+    CreateFont("Scoreboard_ButtonFont", {
         font = "Montserrat Medium",
         size = 16,
         weight = 100,
@@ -87,7 +81,7 @@ if CLIENT then
         extended = true,
     })
 
-    surface.CreateFont("Scoreboard_PlayerInfo_Priv", {
+    CreateFont("Scoreboard_PlayerInfo_Priv", {
         font = "Montserrat Medium",
         size = 20,
         weight = 600,
@@ -95,22 +89,17 @@ if CLIENT then
         extended = true,
     })
 
-    scoreboard.alpha = 0
-    scoreboard.targetAlpha = 0
-    scoreboard.animationSpeed = 10
-
-    scoreboard.currentY = -ScrH()
-    scoreboard.targetY = 0
-    scoreboard.animationYSpeed = 10
-
-    scoreboard.bgColor = Color(25, 25, 25, 220)
-    scoreboard.headerColor = Color(35, 35, 35, 255)
-    scoreboard.playerBgColor = Color(40, 40, 40, 200)
-    scoreboard.textColor = Color(255, 255, 255, 255)
-    scoreboard.accentColor = Color(50, 50, 50, 255)
-    scoreboard.buttonHoverColor = Color(70, 70, 70, 255)
-    scoreboard.headerTextColor = Color(200, 200, 200, 255)
-    scoreboard.hoverColor = Color(60, 60, 60, 255)
+    scoreboard.colors = {
+        bgColor = Color(25, 25, 25, 250),
+        headerColor = Color(35, 35, 35, 255),
+        playerBgColor = Color(40, 40, 40, 150),
+        textColor = Color(255, 255, 255, 255),
+        accentColor = Color(50, 50, 50, 255),
+        buttonHoverColor = Color(70, 70, 70, 255),
+        headerTextColor = Color(200, 200, 200, 255),
+        hoverColor = Color(60, 60, 60, 255),
+        infoBgColor = Color(25, 25, 25, 250) 
+    }
 
     local function GetPingColor(ping)
         if ping <= 90 then
@@ -122,213 +111,197 @@ if CLIENT then
         end
     end
 
-    hook.Add("ScoreboardShow", "CustomScoreboard_Show", function()
-        scoreboard.targetAlpha = 255
-        scoreboard.targetY = (ScrH() - (ScrH() * 0.6)) / 2
-        gui.EnableScreenClicker(true)
-        return true
-    end)
-
-    hook.Add("ScoreboardHide", "CustomScoreboard_Hide", function()
-        scoreboard.targetAlpha = 0
-        scoreboard.targetY = -ScrH()
-        gui.EnableScreenClicker(false)
-        if infoPanel and infoPanel:IsValid() then
-            infoPanel:Remove()
-            selectedPlayer = nil
-            isInfoPanelOpen = false
-        end
-        return true
-    end)
-
-    local function CreateInfoPanel(ply, scoreboardX, scoreboardY, scoreboardWidth, scoreboardHeight)
+    local function CreateInfoPanel(ply, parent)
         if infoPanel and infoPanel:IsValid() then
             infoPanel:Remove()
         end
 
-        infoPanel = vgui.Create("DPanel")
-        infoPanel:SetSize(300, 648)
-        infoPanel:SetPos(scoreboardX + scoreboardWidth, scoreboardY + 1)
+        local frameX, frameY = scoreboard.frame:GetPos()
+        local frameW, frameH = scoreboard.frame:GetSize()
+
+        infoPanel = vgui.Create("DPanel", nil)
+        infoPanel:SetSize(270, frameH - 50)
+        infoPanel:SetPos(frameX + frameW, frameY + 50)
         infoPanel:SetAlpha(0)
         infoPanel:AlphaTo(255, 0.3, 0)
         isInfoPanelOpen = true
         surface.PlaySound("tab/quarter-full-finger-tapping.wav")
 
-        function infoPanel:Paint(w, h)
-            draw.RoundedBoxEx(12, 0, 0, w, h, ColorAlpha(scoreboard.bgColor, self:GetAlpha()), false, true, false, true)
+        infoPanel.Paint = function(self, w, h)
+            draw.RoundedBoxEx(12, 0, 0, w, h, scoreboard.colors.infoBgColor, false, true, false, true)
         end
 
         local avatar = vgui.Create("AvatarImage", infoPanel)
-        avatar:SetSize(64, 64)
-        avatar:SetPlayer(ply, 184)
+        avatar:SetSize(100, 100)
+        avatar:SetPlayer(ply, 100)
         avatar:SetPos((infoPanel:GetWide() - avatar:GetWide()) / 2, 20)
 
         local nameLabel = vgui.Create("DLabel", infoPanel)
         nameLabel:SetText(ply:Nick())
         nameLabel:SetFont("Scoreboard_PlayerName")
-        nameLabel:SetColor(scoreboard.textColor)
+        nameLabel:SetColor(scoreboard.colors.textColor)
         nameLabel:SizeToContents()
-        nameLabel:SetPos((infoPanel:GetWide() - nameLabel:GetWide()) / 2, 100)
+        nameLabel:SetPos((infoPanel:GetWide() - nameLabel:GetWide()) / 2, 130)
 
-        local copyNameButton = vgui.Create("DButton", infoPanel)
-        copyNameButton:SetSize(infoPanel:GetWide() - 40, 30)
-        copyNameButton:SetText("")
-        copyNameButton:SetFont("Scoreboard_ButtonFont")
-        copyNameButton:SetPos(20, 140)
-        copyNameButton:SetTextColor(Color(255, 255, 255))
-        copyNameButton:SetCursor("hand")
-        copyNameButton.Paint = function(self, w, h)
-            if self:IsHovered() then
-                draw.RoundedBox(6, 0, 0, w, h, scoreboard.buttonHoverColor)
-            else
-                draw.RoundedBox(6, 0, 0, w, h, scoreboard.accentColor)
+        local copyButtons = {
+            { text = L.copy_name, func = function()
+                SetClipboardText(ply:Nick())
+                notification_AddLegacy(L.name_copied, NOTIFY_GENERIC, 2)
+                surface.PlaySound("tab/bottle-slam-on-plastic-cap-menu.wav")
+            end },
+            { text = L.copy_steamid, func = function()
+                SetClipboardText(ply:SteamID())
+                notification_AddLegacy(L.steamid_copied, NOTIFY_GENERIC, 2)
+                surface.PlaySound("tab/bottle-slam-on-plastic-cap-menu.wav")
+            end }
+        }
+
+        local buttonY = 170
+        for _, btn in ipairs(copyButtons) do
+            local copyButton = vgui.Create("DButton", infoPanel)
+            copyButton:SetSize(infoPanel:GetWide() - 40, 30)
+            copyButton:SetText("")
+            copyButton:SetFont("Scoreboard_ButtonFont")
+            copyButton:SetPos(20, buttonY)
+            copyButton:SetTextColor(Color(255, 255, 255))
+            copyButton:SetCursor("hand")
+            copyButton.Paint = function(self, w, h)
+                draw.RoundedBox(6, 0, 0, w, h, self:IsHovered() and scoreboard.colors.buttonHoverColor or scoreboard.colors.accentColor)
+                draw.SimpleText(btn.text, "Scoreboard_ButtonFont", w / 2, h / 2, self:GetTextColor(), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             end
-
-            local text = L.copy_name
-            draw.SimpleText(text, "Scoreboard_ButtonFont", w / 2, h / 2, self:GetTextColor(), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        end
-        copyNameButton.DoClick = function()
-            SetClipboardText(ply:Nick())
-            notification_AddLegacy(L.name_copied, NOTIFY_GENERIC, 2)
-            surface.PlaySound("tab/bottle-slam-on-plastic-cap-menu.wav")
-        end
-
-        local copySteamIDButton = vgui.Create("DButton", infoPanel)
-        copySteamIDButton:SetSize(infoPanel:GetWide() - 40, 30)
-        copySteamIDButton:SetText("")
-        copySteamIDButton:SetFont("Scoreboard_ButtonFont")
-        copySteamIDButton:SetPos(20, 180)
-        copySteamIDButton:SetTextColor(Color(255, 255, 255))
-        copySteamIDButton:SetCursor("hand")
-        copySteamIDButton.Paint = function(self, w, h)
-            if self:IsHovered() then
-                draw.RoundedBox(6, 0, 0, w, h, scoreboard.buttonHoverColor)
-            else
-                draw.RoundedBox(6, 0, 0, w, h, scoreboard.accentColor)
-            end
-
-            local text = L.copy_steamid
-            draw.SimpleText(text, "Scoreboard_ButtonFont", w / 2, h / 2, self:GetTextColor(), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        end
-        copySteamIDButton.DoClick = function()
-            SetClipboardText(ply:SteamID())
-            notification_AddLegacy(L.steamid_copied, NOTIFY_GENERIC, 2)
-            surface.PlaySound("tab/bottle-slam-on-plastic-cap-menu.wav")
+            copyButton.DoClick = btn.func
+            buttonY = buttonY + 40
         end
     end
 
-    hook.Add("HUDPaint", "CustomScoreboard_Draw", function()
-        scoreboard.alpha = Lerp(FrameTime() * scoreboard.animationSpeed, scoreboard.alpha, scoreboard.targetAlpha)
-        scoreboard.currentY = Lerp(FrameTime() * scoreboard.animationYSpeed, scoreboard.currentY, scoreboard.targetY)
-        if scoreboard.alpha <= 0 then return end
-
-        if input_WasMousePressed(MOUSE_WHEEL_UP) then
-            scoreboard.scrollOffset = scoreboard.scrollOffset + 20
-        elseif input_WasMousePressed(MOUSE_WHEEL_DOWN) then
-            scoreboard.scrollOffset = scoreboard.scrollOffset - 20
+    local function CreateScoreboard()
+        if scoreboard.frame and scoreboard.frame:IsValid() then
+            scoreboard.frame:Remove()
         end
 
-        local scrW, scrH = ScrW(), ScrH()
-        local width, height = scrW * 0.4, scrH * 0.6
-        local x, y = (scrW - width) / 2, scoreboard.currentY
+        scoreboard.frame = vgui.Create("DFrame")
+        scoreboard.frame:SetTitle("")
+        scoreboard.frame:SetSize(ScrW() * 0.4, ScrH() * 0.6)
+        scoreboard.frame:SetPos((ScrW() - ScrW() * 0.4) / 2, (ScrH() - ScrH() * 0.6) / 2)
+        scoreboard.frame:SetDraggable(false)
+        scoreboard.frame:ShowCloseButton(false)
+        scoreboard.frame:SetAlpha(0)
+        scoreboard.frame:AlphaTo(255, 0.3, 0)
 
-        if isInfoPanelOpen then
-            draw.RoundedBoxEx(12, x, y, width, height, ColorAlpha(scoreboard.bgColor, scoreboard.alpha), true, false, false, false)
-            draw.RoundedBoxEx(12, x, y, width, 50, ColorAlpha(scoreboard.headerColor, scoreboard.alpha), true, false, false, false)
-        else
-            draw.RoundedBox(12, x, y, width, height, ColorAlpha(scoreboard.bgColor, scoreboard.alpha))
-            draw.RoundedBoxEx(12, x, y, width, 50, ColorAlpha(scoreboard.headerColor, scoreboard.alpha), true, true, true, true)
+        scoreboard.frame.Paint = function(self, w, h)
+            local topRight = not isInfoPanelOpen
+            local bottomRight = not isInfoPanelOpen
+            draw.RoundedBoxEx(12, 0, 0, w, h, scoreboard.colors.bgColor, true, topRight, true, bottomRight)
+            draw.RoundedBoxEx(12, 0, 0, w, 50, scoreboard.colors.headerColor, true, true, true, true)
+            draw.SimpleText(L.title, "Scoreboard_Title", w / 2, 25, scoreboard.colors.textColor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
 
-        draw.SimpleText(L.title, "Scoreboard_Title", x + width / 2, y + 25, scoreboard.textColor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        scoreboard.headerPanel = vgui.Create("DPanel", scoreboard.frame)
+        scoreboard.headerPanel:SetTall(30)
+        scoreboard.headerPanel:Dock(TOP)
+        scoreboard.headerPanel:DockMargin(10, 25, 10, 0)
+        scoreboard.headerPanel.Paint = function(self, w, h)
+            draw.SimpleText(L.header_name, "Scoreboard_Header", 10, h / 2, scoreboard.colors.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(L.header_privilege, "Scoreboard_Header", 210, h / 2, scoreboard.colors.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(L.header_kills, "Scoreboard_Header", 360, h / 2, scoreboard.colors.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(L.header_deaths, "Scoreboard_Header", 510, h / 2, scoreboard.colors.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            draw.SimpleText(L.header_ping, "Scoreboard_Header", 660, h / 2, scoreboard.colors.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+            surface.SetDrawColor(scoreboard.colors.accentColor)
+            surface.DrawRect(0, h - 2, w, 2)
+        end
 
-        local padding = 10
-        local playerHeight = 40
-        local startY = y + 60
+        scoreboard.scrollPanel = vgui.Create("DScrollPanel", scoreboard.frame)
+        scoreboard.scrollPanel:Dock(FILL)
+        scoreboard.scrollPanel:DockMargin(10, 5, 10, 10)
+        scoreboard.scrollPanel.VBar:SetWide(8)
+        scoreboard.scrollPanel.VBar.Paint = function() end
+        scoreboard.scrollPanel.VBar.btnUp.Paint = function() end
+        scoreboard.scrollPanel.VBar.btnDown.Paint = function() end
+        scoreboard.scrollPanel.VBar.btnGrip.Paint = function(self, w, h)
+            draw.RoundedBox(4, 0, 0, w, h, scoreboard.colors.accentColor)
+        end
 
-        local nameColumnX = x + padding * 2 + 10
-        local privilegeColumnX = nameColumnX + 200
-        local killsColumnX = privilegeColumnX + 150
-        local deathsColumnX = killsColumnX + 150
-        local pingColumnX = deathsColumnX + 150
+        scoreboard.scrollDesired = 0
 
-        draw.SimpleText(L.header_name, "Scoreboard_Header", nameColumnX, y + 65, scoreboard.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        draw.SimpleText(L.header_privilege, "Scoreboard_Header", privilegeColumnX, y + 65, scoreboard.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        draw.SimpleText(L.header_kills, "Scoreboard_Header", killsColumnX, y + 65, scoreboard.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        draw.SimpleText(L.header_deaths, "Scoreboard_Header", deathsColumnX, y + 65, scoreboard.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        draw.SimpleText(L.header_ping, "Scoreboard_Header", pingColumnX, y + 65, scoreboard.headerTextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        scoreboard.scrollPanel.OnMouseWheeled = function(panel, delta)
+            scoreboard.scrollDesired = math.Clamp(scoreboard.scrollDesired - delta * 40, 0, scoreboard.scrollPanel.VBar.CanvasSize)
+        end
+
+        hook.Add("Think", "CustomScoreboard_SmoothScroll", function()
+            if scoreboard.scrollPanel and scoreboard.scrollPanel:IsValid() then
+                local vbar = scoreboard.scrollPanel.VBar
+                if vbar then
+                    local current = vbar:GetScroll()
+                    local desired = scoreboard.scrollDesired
+                    local speed = 10
+                    local newScroll = Lerp(FrameTime() * speed, current, desired)
+                    vbar:SetScroll(newScroll)
+                end
+            end
+        end)
 
         local playersList = player_GetAll()
-        local totalPlayerHeight = #playersList * (playerHeight + padding)
-        local visibleHeight = height - 80 - 20 
+        table.sort(playersList, function(a, b)
+            return a:Nick() < b:Nick()
+        end)
 
-        local maxScrollOffset = 0
-        local minScrollOffset = math.min(0, visibleHeight - totalPlayerHeight)
+        for _, ply in ipairs(playersList) do
+            local plyPanel = vgui.Create("DPanel", scoreboard.scrollPanel)
+            plyPanel:SetTall(40)
+            plyPanel:Dock(TOP)
+            plyPanel:DockMargin(0, 5, 0, 5)
+            plyPanel:SetCursor("hand")
 
-        scoreboard.scrollOffset = math.Clamp(scoreboard.scrollOffset, minScrollOffset, maxScrollOffset)
+            plyPanel.Paint = function(self, w, h)
+                local plyName = ply:Nick()
+                local plyPing = ply:Ping()
+                local plyKills = ply:Frags()
+                local plyDeaths = ply:Deaths()
 
-        local playerStartY = y + 80 + scoreboard.scrollOffset
+                local privilegeInfo = specialPrivileges[ply:SteamID()]
+                local plyPrivilege = privilegeInfo and privilegeInfo.role or (ply:GetUserGroup() or "User")
+                local privilegeColor = privilegeInfo and privilegeInfo.color or scoreboard.colors.textColor
 
-        local scissorX = x + padding
-        local scissorY = y + 80
-        local scissorWidth = width - 2 * padding
-        local scissorHeight = visibleHeight
-
-        render.SetScissorRect(scissorX, scissorY, scissorX + scissorWidth, scissorY + scissorHeight, true)
-
-        local mouseX, mouseY = gui_MousePos()
-        local mousePressed = input_IsMouseDown(MOUSE_LEFT)
-
-        hoveredPlayer = nil
-
-        for i, ply in ipairs(playersList) do
-            local plyName = ply:Nick()
-            local plyPing = ply:Ping()
-            local plyKills = ply:Frags()
-            local plyDeaths = ply:Deaths()
-            local plyY = playerStartY + (i - 1) * (playerHeight + padding)
-
-            local privilegeInfo = specialPrivileges[ply:SteamID()]
-            local plyPrivilege, privilegeColor
-            if privilegeInfo then
-                plyPrivilege = privilegeInfo.role
-                privilegeColor = privilegeInfo.color
-            else
-                plyPrivilege = ply:GetUserGroup() or "User"
-                privilegeColor = scoreboard.textColor
+                local bgColor = self:IsHovered() and scoreboard.colors.hoverColor or scoreboard.colors.playerBgColor
+                draw.RoundedBox(8, 0, 0, w, h, bgColor)
+                draw.SimpleText(plyName, "Scoreboard_PlayerName", 10, h / 2, scoreboard.colors.textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(plyPrivilege, "Scoreboard_PlayerInfo_Priv", 210, h / 2, privilegeColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(tostring(plyKills), "Scoreboard_PlayerInfo", 360, h / 2, scoreboard.colors.textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(tostring(plyDeaths), "Scoreboard_PlayerInfo", 510, h / 2, scoreboard.colors.textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(tostring(plyPing), "Scoreboard_PlayerInfo", 660, h / 2, GetPingColor(plyPing), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
             end
 
-            local isHovered = mouseX > x + padding and mouseX < x + width - padding and mouseY > plyY and mouseY < plyY + playerHeight
-            if isHovered then
-                hoveredPlayer = ply
-            end
-
-            local bgColor = ColorAlpha(scoreboard.playerBgColor, scoreboard.alpha)
-            if isHovered then
-                bgColor = ColorAlpha(scoreboard.hoverColor, scoreboard.alpha)
-            end
-
-            draw.RoundedBox(8, x + padding, plyY, width - 2 * padding, playerHeight, bgColor)
-
-            draw.SimpleText(plyName, "Scoreboard_PlayerName", nameColumnX, plyY + playerHeight / 2, scoreboard.textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-            draw.SimpleText(plyPrivilege, "Scoreboard_PlayerInfo_Priv", privilegeColumnX, plyY + playerHeight / 2, privilegeColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-            draw.SimpleText(tostring(plyKills), "Scoreboard_PlayerInfo", killsColumnX, plyY + playerHeight / 2, scoreboard.textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-            draw.SimpleText(tostring(plyDeaths), "Scoreboard_PlayerInfo", deathsColumnX, plyY + playerHeight / 2, scoreboard.textColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-            local pingColor = GetPingColor(plyPing)
-            draw.SimpleText(tostring(plyPing), "Scoreboard_PlayerInfo", pingColumnX, plyY + playerHeight / 2, pingColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-
-            if isHovered then
-                if mousePressed and not ply.clicked then
+            plyPanel.OnMousePressed = function(self, code)
+                if code == MOUSE_LEFT then
                     selectedPlayer = ply
-                    CreateInfoPanel(ply, x, y, width, height)
-                    ply.clicked = true
-                elseif not mousePressed then
-                    ply.clicked = false
+                    CreateInfoPanel(ply, scoreboard.frame)
                 end
             end
         end
+    end
 
-        render.SetScissorRect(0, 0, 0, 0, false)
+    local function CloseScoreboard()
+        if scoreboard.frame and scoreboard.frame:IsValid() then
+            scoreboard.frame:Remove()
+        end
+        if infoPanel and infoPanel:IsValid() then
+            infoPanel:Remove()
+            selectedPlayer = nil
+            isInfoPanelOpen = false
+        end
+        hook.Remove("Think", "CustomScoreboard_SmoothScroll")
+    end
+
+    hook.Add("ScoreboardShow", "CustomScoreboard_Show", function()
+        CreateScoreboard()
+        gui.EnableScreenClicker(true)
+        return true
+    end)
+
+    hook.Add("ScoreboardHide", "CustomScoreboard_Hide", function()
+        CloseScoreboard()
+        gui.EnableScreenClicker(false)
+        return true
     end)
 
     hook.Add("Think", "CustomScoreboard_CloseInfoPanel", function()
@@ -336,6 +309,21 @@ if CLIENT then
             infoPanel:Remove()
             selectedPlayer = nil
             isInfoPanelOpen = false
+            surface.PlaySound("buttons/button15.wav")
+        end
+    end)
+
+    hook.Add("GUIMousePressed", "CustomScoreboard_CloseInfoPanel_OnClickOutside", function(code, mx, my)
+        if isInfoPanelOpen and code == MOUSE_LEFT and infoPanel and infoPanel:IsValid() then
+            local infoPanelX, infoPanelY = infoPanel:LocalToScreen(0, 0)
+            local infoPanelW, infoPanelH = infoPanel:GetWide(), infoPanel:GetTall()
+
+            if not (mx >= infoPanelX and mx <= infoPanelX + infoPanelW and my >= infoPanelY and my <= infoPanelY + infoPanelH) then
+                infoPanel:Remove()
+                selectedPlayer = nil
+                isInfoPanelOpen = false
+                surface.PlaySound("buttons/button15.wav")
+            end
         end
     end)
 end
