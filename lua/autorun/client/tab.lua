@@ -38,6 +38,7 @@ if CLIENT then
 
     local specialPrivileges = {
         ["STEAM_0:0:562063878"] = { role = L.developer, color = Color(30, 144, 255) },
+        ["STEAM_0:0:454092551"] = { role = "Отец", color = Color(220, 20, 60) },
     }
 
     local CreateFont = surface.CreateFont
